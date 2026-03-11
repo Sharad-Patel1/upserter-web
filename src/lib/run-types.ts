@@ -1,9 +1,16 @@
+export interface HealthResponse {
+  ok: boolean
+  s3Configured: boolean
+  clickhomeConfigured: boolean
+  version: string
+}
+
 export type JsonValue =
   | string
   | number
   | boolean
   | null
-  | JsonValue[]
+  | Array<JsonValue>
   | { [key: string]: JsonValue }
 
 export type RunStatus =
@@ -44,7 +51,7 @@ export interface RunDecision {
   action: "create" | "update" | "skip_unchanged"
   reason: string
   optionId?: number
-  jsonPatchOperations?: JsonPatchOperation[]
+  jsonPatchOperations?: Array<JsonPatchOperation>
   mergePatchObject?: { [key: string]: JsonValue }
 }
 
@@ -104,7 +111,7 @@ export interface RunReport {
   options: AppliedRunOptions
   totals: RunTotals
   checkpoint: RunCheckpoint
-  items: RunItemOutcome[]
+  items: Array<RunItemOutcome>
   error?: string
 }
 
@@ -162,17 +169,17 @@ export interface TelemetryEvent {
 
 export interface RunSnapshot {
   report: RunReport
-  events: TelemetryEvent[]
+  events: Array<TelemetryEvent>
   runtime: {
-    activeRunIds: string[]
+    activeRunIds: Array<string>
     activeRunCount: number
     pendingUpdateChains: number
   }
   metrics: {
     generatedAt: string
-    counters: MetricCounter[]
-    gauges: MetricGauge[]
-    timings: MetricTiming[]
+    counters: Array<MetricCounter>
+    gauges: Array<MetricGauge>
+    timings: Array<MetricTiming>
   }
   audit: {
     run: RunReport | null
@@ -253,10 +260,10 @@ export interface AuditFileSyncAttemptRow {
 
 export interface RunItemDetail {
   item: RunItemOutcome | null
-  stepEvents: AuditStepEventRow[]
-  artifacts: AuditArtifactRow[]
-  httpExchanges: AuditHttpExchangeRow[]
-  fileSyncAttempts: AuditFileSyncAttemptRow[]
+  stepEvents: Array<AuditStepEventRow>
+  artifacts: Array<AuditArtifactRow>
+  httpExchanges: Array<AuditHttpExchangeRow>
+  fileSyncAttempts: Array<AuditFileSyncAttemptRow>
 }
 
 export interface StartRunInput {

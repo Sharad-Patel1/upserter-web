@@ -6,13 +6,13 @@ export interface RunConsoleState {
   lastHeartbeatAt?: string
 }
 
-function dedupeTelemetry(events: TelemetryEvent[]) {
+function dedupeTelemetry(events: Array<TelemetryEvent>) {
   return [...new Map(events.map((event) => [event.id, event])).values()].sort((left, right) =>
     left.timestamp.localeCompare(right.timestamp)
   )
 }
 
-function upsertItem(items: RunItemOutcome[], item: RunItemOutcome) {
+function upsertItem(items: Array<RunItemOutcome>, item: RunItemOutcome) {
   const nextItems = items.filter((current) => current.key !== item.key)
   nextItems.push(item)
   nextItems.sort((left, right) => left.startedAt.localeCompare(right.startedAt))

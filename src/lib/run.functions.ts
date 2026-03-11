@@ -1,13 +1,14 @@
 import { createServerFn } from "@tanstack/react-start"
 
-import { upserterApiRequest } from "@/lib/upserter-api.server"
 import type {
+  HealthResponse,
   RunItemDetail,
   RunListEntry,
   RunSnapshot,
   StartRunInput,
   StartRunResponse,
 } from "@/lib/run-types"
+import { upserterApiRequest } from "@/lib/upserter-api.server"
 
 export const listRuns = createServerFn({ method: "GET" })
   .inputValidator((data: { limit?: number } | undefined) => data ?? {})
@@ -18,7 +19,7 @@ export const listRuns = createServerFn({ method: "GET" })
     }
 
     const suffix = search.size > 0 ? `?${search.toString()}` : ""
-    return upserterApiRequest<RunListEntry[]>(`/upserts/tender-options/runs${suffix}`)
+    return upserterApiRequest<Array<RunListEntry>>(`/upserts/tender-options/runs${suffix}`)
   })
 
 export const getRunSnapshot = createServerFn({ method: "GET" })
@@ -28,7 +29,7 @@ export const getRunSnapshot = createServerFn({ method: "GET" })
       `/observability/runs/${encodeURIComponent(data.runId)}`
     )
 
-    return snapshot as RunSnapshot
+    return snapshot
   })
 
 export const getRunStreamBaseUrl = createServerFn({ method: "GET" }).handler(async () => {
@@ -49,7 +50,7 @@ export const getRunItemDetail = createServerFn({ method: "GET" })
       )}`
     )
 
-    return detail as RunItemDetail
+    return detail
   })
 
 export const startRun = createServerFn({ method: "POST" })
@@ -60,3 +61,11 @@ export const startRun = createServerFn({ method: "POST" })
       body: JSON.stringify(data),
     })
   )
+
+export const getHealthStatus = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    return await upserterApiRequest<HealthResponse>("/health")
+  } catch {
+    return { ok: false, s3Configured: false, clickhomeConfigured: false, version: "unknown" }
+  }
+})

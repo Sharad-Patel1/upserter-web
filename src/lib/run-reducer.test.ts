@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import { createRunConsoleState, reduceRunConsoleEvent } from "@/lib/run-reducer"
 import type { RunSnapshot } from "@/lib/run-types"
+import { createRunConsoleState, reduceRunConsoleEvent } from "@/lib/run-reducer"
 
 function buildSnapshot(): RunSnapshot {
   return {

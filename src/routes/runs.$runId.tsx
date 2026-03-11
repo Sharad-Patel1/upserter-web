@@ -1,47 +1,29 @@
-import { format, formatDistanceToNowStrict } from "date-fns"
-import { Link, createFileRoute } from "@tanstack/react-router"
-import {
-  startTransition,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react"
+import { createFileRoute } from "@tanstack/react-router"
+import { startTransition, useEffect, useState } from "react"
+import { toast } from "sonner"
 
-import { Badge } from "@/components/ui/badge"
+import type { RunItemDetail, RunSnapshot, RunStreamEvent } from "@/lib/run-types"
+import type {ItemFilters} from "@/lib/filters";
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable"
+import { RunHeader } from "@/components/run/run-header"
+import { ItemsBrowser } from "@/components/run/items-browser"
+import { ItemDetailPanel } from "@/components/run/item-detail-panel"
+import { ActivityFeed } from "@/components/run/activity-feed"
 import {
   getRunItemDetail,
   getRunSnapshot,
   getRunStreamBaseUrl,
 } from "@/lib/run.functions"
 import { createRunConsoleState, reduceRunConsoleEvent } from "@/lib/run-reducer"
-import type {
-  JsonValue,
-  RunItemDetail,
-  RunItemOutcome,
-  RunSnapshot,
-  RunStreamEvent,
-  TelemetryEvent,
-} from "@/lib/run-types"
-import { RunStatusBadge } from "@/routes/index"
+import { DEFAULT_FILTERS  } from "@/lib/filters"
 
-type ItemFilter = "all" | "create" | "update" | "skip" | "error"
-type MainPane = "timeline" | "items" | "detail"
 type ItemDetailState = { loading: boolean; data?: RunItemDetail; error?: string }
+type MainView = "items" | "activity"
 
 export const Route = createFileRoute("/runs/$runId")({
   loader: async ({ params }) => {
@@ -49,11 +31,7 @@ export const Route = createFileRoute("/runs/$runId")({
       getRunSnapshot({ data: { runId: params.runId } }),
       getRunStreamBaseUrl(),
     ])
-
-    return {
-      snapshot,
-      streamBaseUrl,
-    }
+    return { snapshot, streamBaseUrl }
   },
   component: RunDetailPage,
 })
@@ -62,86 +40,18 @@ function RunDetailPage() {
   const { snapshot: initialSnapshot, streamBaseUrl } = Route.useLoaderData()
   const { runId } = Route.useParams()
   const [state, setState] = useState(() => createRunConsoleState(initialSnapshot))
-  const [activePane, setActivePane] = useState<MainPane>("timeline")
+  const [mainView, setMainView] = useState<MainView>("items")
   const [selectedKey, setSelectedKey] = useState(
     () => initialSnapshot.report.items.at(-1)?.key ?? ""
   )
   const [detailsByKey, setDetailsByKey] = useState<Record<string, ItemDetailState>>({})
-  const [search, setSearch] = useState("")
-  const [filter, setFilter] = useState<ItemFilter>("all")
+  const [filters, setFilters] = useState<ItemFilters>(DEFAULT_FILTERS)
   const [streamError, setStreamError] = useState<string>()
-  const deferredSearch = useDeferredValue(search)
 
-  const filteredItems = useMemo(() => {
-    const normalizedSearch = deferredSearch.trim().toLowerCase()
-
-    return [...state.snapshot.report.items]
-      .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
-      .filter((item) => {
-        if (filter === "create" && !item.action.startsWith("create")) {
-          return false
-        }
-
-        if (filter === "update" && !item.action.startsWith("update")) {
-          return false
-        }
-
-        if (filter === "skip" && item.action !== "skip_unchanged") {
-          return false
-        }
-
-        if (filter === "error" && !isErroredItem(item)) {
-          return false
-        }
-
-        if (!normalizedSearch) {
-          return true
-        }
-
-        const haystack = [
-          item.key,
-          item.externalRef,
-          item.optionId ? String(item.optionId) : "",
-          item.error,
-          item.action,
-          item.decision?.reason,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-
-        return haystack.includes(normalizedSearch)
-      })
-  }, [deferredSearch, filter, state.snapshot.report.items])
-
-  const selectedItem =
-    filteredItems.find((item) => item.key === selectedKey) ??
-    state.snapshot.report.items.find((item) => item.key === selectedKey)
-
+  const selectedItem = state.snapshot.report.items.find((item) => item.key === selectedKey)
   const selectedDetail = selectedKey ? detailsByKey[selectedKey] : undefined
 
-  const filterCounts = useMemo(
-    () => ({
-      all: state.snapshot.report.items.length,
-      create: state.snapshot.report.items.filter((item) => item.action.startsWith("create")).length,
-      update: state.snapshot.report.items.filter((item) => item.action.startsWith("update")).length,
-      skip: state.snapshot.report.items.filter((item) => item.action === "skip_unchanged").length,
-      error: state.snapshot.report.items.filter((item) => isErroredItem(item)).length,
-    }),
-    [state.snapshot.report.items]
-  )
-
-  useEffect(() => {
-    if (!selectedKey && filteredItems[0]) {
-      setSelectedKey(filteredItems[0].key)
-      return
-    }
-
-    if (selectedKey && !state.snapshot.report.items.some((item) => item.key === selectedKey)) {
-      setSelectedKey(filteredItems[0]?.key ?? state.snapshot.report.items.at(0)?.key ?? "")
-    }
-  }, [filteredItems, selectedKey, state.snapshot.report.items])
-
+  // ── SSE connection management ──────────────────────────────────────
   useEffect(() => {
     let closed = false
     let terminal = isTerminalStatus(initialSnapshot.report.status)
@@ -155,9 +65,7 @@ function RunDetailPage() {
     }
 
     const connect = () => {
-      if (closed) {
-        return
-      }
+      if (closed) return
 
       if (!resolvedBaseUrl) {
         setStreamError("Live stream base URL is unavailable. Falling back to polling.")
@@ -176,11 +84,7 @@ function RunDetailPage() {
       )
 
       source.addEventListener("open", () => {
-        if (closed) {
-          source.close()
-          return
-        }
-
+        if (closed) { source.close(); return }
         setStreamError(undefined)
         setState((current) => ({ ...current, connectionState: "live" }))
       })
@@ -200,14 +104,8 @@ function RunDetailPage() {
       })
 
       source.addEventListener("item-recorded", (event) => {
-        const payload = JSON.parse(event.data) as Extract<
-          RunStreamEvent,
-          { type: "item-recorded" }
-        >["payload"]
-        applyStreamEvent({
-          type: "item-recorded",
-          payload,
-        })
+        const payload = JSON.parse(event.data) as Extract<RunStreamEvent, { type: "item-recorded" }>["payload"]
+        applyStreamEvent({ type: "item-recorded", payload })
         setSelectedKey((current) => current || payload.item.key)
       })
 
@@ -227,21 +125,21 @@ function RunDetailPage() {
 
       source.addEventListener("terminal", (event) => {
         terminal = true
-        applyStreamEvent({
-          type: "terminal",
-          payload: JSON.parse(event.data) as Extract<RunStreamEvent, { type: "terminal" }>["payload"],
-        })
+        const payload = JSON.parse(event.data) as Extract<RunStreamEvent, { type: "terminal" }>["payload"]
+        applyStreamEvent({ type: "terminal", payload })
         closed = true
         source.close()
+
+        if (payload.status === "completed") {
+          toast.success("Run completed", { description: `Run ${runId.slice(0, 8)}... finished successfully.` })
+        } else if (payload.status === "failed") {
+          toast.error("Run failed", { description: `Run ${runId.slice(0, 8)}... failed.` })
+        }
       })
 
       source.onerror = () => {
         source.close()
-
-        if (closed || terminal) {
-          return
-        }
-
+        if (closed || terminal) return
         setStreamError("Live stream interrupted. Retrying and polling until it returns.")
         setState((current) => ({
           ...current,
@@ -252,38 +150,26 @@ function RunDetailPage() {
     }
 
     connect()
-
     return () => {
       closed = true
-      if (reconnectTimer) {
-        window.clearTimeout(reconnectTimer)
-      }
+      if (reconnectTimer) window.clearTimeout(reconnectTimer)
     }
   }, [initialSnapshot.report.status, runId, streamBaseUrl])
 
+  // ── Polling fallback ───────────────────────────────────────────────
   useEffect(() => {
-    if (
-      state.connectionState === "live" ||
-      isTerminalStatus(state.snapshot.report.status)
-    ) {
-      return
-    }
+    if (state.connectionState === "live" || isTerminalStatus(state.snapshot.report.status)) return
 
     let cancelled = false
     const interval = window.setInterval(() => {
       startTransition(async () => {
         try {
           const freshSnapshot = await getRunSnapshot({ data: { runId } })
-          if (cancelled) {
-            return
-          }
-
+          if (cancelled) return
           setState((current) => ({
             ...current,
             snapshot: freshSnapshot,
-            connectionState: isTerminalStatus(freshSnapshot.report.status)
-              ? "closed"
-              : current.connectionState,
+            connectionState: isTerminalStatus(freshSnapshot.report.status) ? "closed" : current.connectionState,
           }))
         } catch {
           // Keep last good state while retrying.
@@ -291,867 +177,135 @@ function RunDetailPage() {
       })
     }, 2_500)
 
-    return () => {
-      cancelled = true
-      window.clearInterval(interval)
-    }
+    return () => { cancelled = true; window.clearInterval(interval) }
   }, [runId, state.connectionState, state.snapshot.report.status])
 
+  // ── Item detail fetching ───────────────────────────────────────────
   useEffect(() => {
-    if (!selectedKey || detailsByKey[selectedKey]?.loading || detailsByKey[selectedKey]?.data) {
-      return
-    }
+    if (!selectedKey) return
+
+    // Guard via the setter to avoid depending on detailsByKey in the dep array.
+    // We track whether the updater decided to skip via a mutable ref object.
+    const gate = { skip: false }
+    setDetailsByKey((current) => {
+      const existing = current[selectedKey] as ItemDetailState | undefined
+      if (existing && (existing.loading || existing.data)) {
+        gate.skip = true
+        return current
+      }
+      return {
+        ...current,
+        [selectedKey]: { loading: true },
+      }
+    })
+
+    if (gate.skip) return
 
     let cancelled = false
-    setDetailsByKey((current) => ({
-      ...current,
-      [selectedKey]: {
-        ...current[selectedKey],
-        loading: true,
-      },
-    }))
 
     startTransition(async () => {
       try {
-        const detail = (await getRunItemDetail({
-          data: {
-            runId,
-            itemKey: selectedKey,
-          },
-        })) as RunItemDetail
-
-        if (cancelled) {
-          return
-        }
-
+        const detail = await getRunItemDetail({ data: { runId, itemKey: selectedKey } })
+        if (cancelled) return
         setDetailsByKey((current) => ({
           ...current,
-          [selectedKey]: {
-            loading: false,
-            data: detail,
-          },
+          [selectedKey]: { loading: false, data: detail },
         }))
       } catch (detailError) {
-        if (cancelled) {
-          return
-        }
-
+        if (cancelled) return
         setDetailsByKey((current) => ({
           ...current,
-          [selectedKey]: {
-            loading: false,
-            error: detailError instanceof Error ? detailError.message : String(detailError),
-          },
+          [selectedKey]: { loading: false, error: detailError instanceof Error ? detailError.message : String(detailError) },
         }))
       }
     })
 
-    return () => {
-      cancelled = true
+    return () => { cancelled = true }
+  }, [runId, selectedKey])
+
+  // ── Auto-select first item ─────────────────────────────────────────
+  useEffect(() => {
+    if (!selectedKey && state.snapshot.report.items.length > 0) {
+      setSelectedKey(state.snapshot.report.items[state.snapshot.report.items.length - 1].key)
     }
-  }, [detailsByKey, runId, selectedKey])
+  }, [selectedKey, state.snapshot.report.items])
 
   return (
-    <div className="min-h-svh bg-[radial-gradient(circle_at_top_left,_rgba(222,116,41,0.18),_transparent_26%),radial-gradient(circle_at_top_right,_rgba(18,61,74,0.28),_transparent_34%),linear-gradient(180deg,_rgba(248,244,238,0.98),_rgba(237,232,225,0.96))]">
-      <div className="mx-auto flex min-h-svh max-w-[1480px] flex-col gap-4 px-4 py-5 md:px-6 md:py-6">
-        <Card className="overflow-hidden border border-foreground/10 bg-background/88 backdrop-blur-sm">
-          <CardHeader className="gap-3 border-b border-border/70">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0 space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button asChild variant="outline" size="sm">
-                    <Link to="/">Back to dashboard</Link>
-                  </Button>
-                  <Badge variant="outline">{state.snapshot.report.mode}</Badge>
-                  <RunStatusBadge status={state.snapshot.report.status} />
-                  <ConnectionBadge state={state.connectionState} />
-                </div>
-                <CardTitle className="break-all text-3xl leading-none tracking-[-0.04em] md:text-4xl">
-                  {state.snapshot.report.runId}
-                </CardTitle>
-                <CardDescription className="max-w-3xl text-sm">
-                  Created {formatRelativeTime(state.snapshot.report.createdAt)}
-                  {state.lastHeartbeatAt
-                    ? ` · last heartbeat ${formatRelativeTime(state.lastHeartbeatAt)}`
-                    : ""}
-                  {streamError ? ` · ${streamError}` : ""}
-                </CardDescription>
-              </div>
+    <div className="flex h-[calc(100svh-3rem)] flex-col gap-3 px-4 py-4 md:px-6">
+      <RunHeader
+        snapshot={state.snapshot}
+        connectionState={state.connectionState}
+        lastHeartbeatAt={state.lastHeartbeatAt}
+        streamError={streamError}
+      />
 
-              <div className="grid shrink-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                <SummaryMetric label="Scanned" value={state.snapshot.report.totals.scanned} />
-                <SummaryMetric label="Created" value={state.snapshot.report.totals.created} />
-                <SummaryMetric label="Updated" value={state.snapshot.report.totals.updated} />
-                <SummaryMetric label="Errors" value={state.snapshot.report.totals.errored} />
-              </div>
-            </div>
-          </CardHeader>
-
-          <CardContent className="grid gap-3 pt-4 md:grid-cols-2 xl:grid-cols-4">
-            <SummaryStrip
-              title="Checkpoint"
-              value={state.snapshot.report.checkpoint.lastProcessedKey ?? "Waiting for first item"}
-              detail={
-                state.snapshot.report.checkpoint.updatedAt
-                  ? formatDateTime(state.snapshot.report.checkpoint.updatedAt)
-                  : "No checkpoint yet"
-              }
-            />
-            <SummaryStrip
-              title="Duration"
-              value={formatRunDuration(
-                state.snapshot.report.startedAt,
-                state.snapshot.report.finishedAt
-              )}
-              detail={
-                state.snapshot.report.startedAt
-                  ? `Started ${formatDateTime(state.snapshot.report.startedAt)}`
-                  : "Queued only"
-              }
-            />
-            <SummaryStrip
-              title="Artifacts"
-              value={state.snapshot.audit.artifactCount}
-              detail={`${state.snapshot.audit.httpExchangeCount} HTTP exchanges · ${state.snapshot.audit.fileSyncAttemptCount} file steps`}
-            />
-            <SummaryStrip
-              title="Runtime"
-              value={state.snapshot.runtime.activeRunCount}
-              detail={`${state.snapshot.runtime.pendingUpdateChains} pending update chains`}
-            />
-          </CardContent>
-        </Card>
-
-        <Tabs
-          value={activePane}
-          onValueChange={(value) => setActivePane(value as MainPane)}
-          className="min-h-[72svh]"
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant={mainView === "items" ? "default" : "outline"}
+          onClick={() => setMainView("items")}
         >
-          <TabsList
-            variant="line"
-            className="w-full justify-start overflow-x-auto border border-foreground/10 bg-background/80 p-2"
-          >
-            <TabsTrigger value="timeline">
-              Timeline
-              <span className="ml-1 text-[10px] uppercase tracking-[0.16em]">
-                {state.snapshot.events.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="items">
-              Items
-              <span className="ml-1 text-[10px] uppercase tracking-[0.16em]">
-                {state.snapshot.report.items.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger value="detail" disabled={!selectedItem}>
-              Detail
-              <span className="ml-1 text-[10px] uppercase tracking-[0.16em]">
-                {selectedItem ? "selected" : "idle"}
-              </span>
-            </TabsTrigger>
-          </TabsList>
+          Items
+          <span className="ml-1 text-[10px] uppercase tracking-[0.16em]">
+            {state.snapshot.report.items.length}
+          </span>
+        </Button>
+        <Button
+          size="sm"
+          variant={mainView === "activity" ? "default" : "outline"}
+          onClick={() => setMainView("activity")}
+        >
+          Activity
+          <span className="ml-1 text-[10px] uppercase tracking-[0.16em]">
+            {state.snapshot.events.length}
+          </span>
+        </Button>
+      </div>
 
-          <TabsContent value="timeline" className="mt-0">
-            <PanelCard
-              title="Live timeline"
-              description="Every run-scoped telemetry event flowing through the API."
-            >
-              {state.snapshot.events.length === 0 ? (
-                <MutedState message="No telemetry events yet for this run." />
-              ) : (
-                [...state.snapshot.events]
-                  .sort((left, right) => right.timestamp.localeCompare(left.timestamp))
-                  .map((event) => <TimelineEventCard key={event.id} event={event} />)
-              )}
-            </PanelCard>
-          </TabsContent>
-
-          <TabsContent value="items" className="mt-0">
-            <PanelCard
-              title="Tender option items"
-              description="Filter by lifecycle outcome, inspect patch decisions, and jump into item detail."
-            >
-              <div className="space-y-3">
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search by key, external ref, option ID, or error"
+      <div className="min-h-0 flex-1">
+        {mainView === "items" ? (
+          <ResizablePanelGroup orientation="horizontal" className="h-full rounded-md border border-border/70 bg-background/86">
+            <ResizablePanel defaultSize={55} minSize={30}>
+              <div className="h-full overflow-auto p-3">
+                <ItemsBrowser
+                  items={state.snapshot.report.items}
+                  selectedKey={selectedKey}
+                  onSelectItem={setSelectedKey}
+                  filters={filters}
+                  onFiltersChange={setFilters}
                 />
-                <div className="flex flex-wrap gap-2">
-                  {(
-                    [
-                      ["all", "All"],
-                      ["create", "Create"],
-                      ["update", "Update"],
-                      ["skip", "Skip"],
-                      ["error", "Error"],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <Button
-                      key={value}
-                      type="button"
-                      size="sm"
-                      variant={filter === value ? "default" : "outline"}
-                      onClick={() => setFilter(value)}
-                    >
-                      {label}
-                      <span className="ml-1 text-[10px] uppercase tracking-[0.16em]">
-                        {filterCounts[value]}
-                      </span>
-                    </Button>
-                  ))}
-                </div>
               </div>
-
-              {filteredItems.length === 0 ? (
-                <MutedState message="No items match the current filter." />
-              ) : (
-                filteredItems.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => {
-                      setSelectedKey(item.key)
-                      setActivePane("detail")
-                    }}
-                    className={[
-                      "block w-full rounded-none border px-4 py-3 text-left transition-colors",
-                      selectedKey === item.key
-                        ? "border-primary/35 bg-primary/8"
-                        : "border-border/70 bg-muted/12 hover:bg-muted/22",
-                    ].join(" ")}
-                  >
-                    <ItemRow item={item} />
-                  </button>
-                ))
-              )}
-            </PanelCard>
-          </TabsContent>
-
-          <TabsContent value="detail" className="mt-0">
-            <PanelCard
-              title="Item drilldown"
-              description="Artifacts, API exchanges, file sync attempts, and the exact event trail."
-            >
-              {selectedItem ? (
-                <>
-                  <Card className="overflow-hidden border border-foreground/10 bg-background/90">
-                    <CardHeader className="gap-2 border-b border-border/70">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <RunActionBadge action={selectedItem.action} />
-                        {selectedItem.optionId ? (
-                          <Badge variant="outline">Option {selectedItem.optionId}</Badge>
-                        ) : null}
-                        {selectedItem.externalRef ? (
-                          <Badge variant="outline">{selectedItem.externalRef}</Badge>
-                        ) : null}
-                      </div>
-                      <CardTitle className="break-all text-base tracking-[-0.03em]">
-                        {selectedItem.key}
-                      </CardTitle>
-                      <CardDescription>
-                        {selectedItem.decision?.reason ?? "No decision text recorded"}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="grid gap-2 pt-4 md:grid-cols-2">
-                      <SummaryStrip
-                        title="Patch strategy"
-                        value={selectedItem.audit?.patchStrategy ?? "n/a"}
-                        detail={
-                          selectedItem.decision?.jsonPatchOperations?.length
-                            ? `${selectedItem.decision.jsonPatchOperations.length} json patch ops`
-                            : "No patch operations"
-                        }
-                      />
-                      <SummaryStrip
-                        title="Files"
-                        value={`${selectedItem.files.uploaded} uploaded / ${selectedItem.files.skippedExisting} skipped`}
-                        detail={`${selectedItem.files.failed} failed · ${selectedItem.files.wouldUpload} would upload`}
-                      />
-                      <SummaryStrip
-                        title="Latency"
-                        value={`${selectedItem.latencyMs}ms`}
-                        detail={`${formatDateTime(selectedItem.startedAt)} -> ${formatDateTime(selectedItem.finishedAt)}`}
-                      />
-                      <SummaryStrip
-                        title="Changed paths"
-                        value={selectedItem.decision?.jsonPatchOperations?.length ?? 0}
-                        detail={selectedItem.error ?? "No terminal error recorded"}
-                      />
-                    </CardContent>
-                  </Card>
-
-                  {selectedDetail?.loading ? (
-                    <MutedState message="Loading item detail..." />
-                  ) : selectedDetail?.error ? (
-                    <MutedState message={selectedDetail.error} tone="error" />
-                  ) : selectedDetail?.data ? (
-                    <Tabs defaultValue="artifacts" className="min-w-0">
-                      <TabsList
-                        variant="line"
-                        className="w-full justify-start overflow-x-auto border border-border/70 bg-background/80 p-2"
-                      >
-                        <TabsTrigger value="artifacts">Artifacts</TabsTrigger>
-                        <TabsTrigger value="http">API exchanges</TabsTrigger>
-                        <TabsTrigger value="files">Files</TabsTrigger>
-                        <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="artifacts" className="space-y-3 pt-3">
-                        {selectedDetail.data.artifacts.length === 0 ? (
-                          <MutedState message="No artifacts recorded for this item." />
-                        ) : (
-                          selectedDetail.data.artifacts.map((artifact) => (
-                            <ArtifactCard key={artifact.id} artifact={artifact} />
-                          ))
-                        )}
-                      </TabsContent>
-
-                      <TabsContent value="http" className="space-y-3 pt-3">
-                        {selectedDetail.data.httpExchanges.length === 0 ? (
-                          <MutedState message="No HTTP exchanges recorded for this item." />
-                        ) : (
-                          selectedDetail.data.httpExchanges.map((exchange) => (
-                            <HttpExchangeCard key={exchange.requestId} exchange={exchange} />
-                          ))
-                        )}
-                      </TabsContent>
-
-                      <TabsContent value="files" className="space-y-3 pt-3">
-                        {selectedDetail.data.fileSyncAttempts.length === 0 ? (
-                          <MutedState message="No file sync attempts recorded for this item." />
-                        ) : (
-                          selectedDetail.data.fileSyncAttempts.map((attempt) => (
-                            <FileAttemptCard key={attempt.id} attempt={attempt} />
-                          ))
-                        )}
-                      </TabsContent>
-
-                      <TabsContent value="timeline" className="space-y-3 pt-3">
-                        {selectedDetail.data.stepEvents.length === 0 ? (
-                          <MutedState message="No step events recorded for this item." />
-                        ) : (
-                          selectedDetail.data.stepEvents.map((event) => (
-                            <StepEventCard key={event.id} event={event} />
-                          ))
-                        )}
-                      </TabsContent>
-                    </Tabs>
-                  ) : (
-                    <MutedState message="Select an item to load its full audit detail." />
-                  )}
-                </>
-              ) : (
-                <MutedState message="No item selected. Pick a tender option from the items tab." />
-              )}
-            </PanelCard>
-          </TabsContent>
-        </Tabs>
-      </div>
-    </div>
-  )
-}
-
-function PanelCard({
-  title,
-  description,
-  children,
-}: {
-  title: string
-  description: string
-  children: ReactNode
-}) {
-  return (
-    <Card className="min-h-[72svh] overflow-hidden border border-foreground/10 bg-background/86">
-      <CardHeader className="gap-2 border-b border-border/70">
-        <CardTitle className="text-base uppercase tracking-[0.22em] text-foreground/80">
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent className="p-0">
-        <ScrollArea className="h-[calc(72svh-5.5rem)]">
-          <div className="space-y-4 p-4">{children}</div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
-  )
-}
-
-function SummaryMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border border-border/70 bg-muted/18 px-4 py-3">
-      <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl leading-none tracking-[-0.04em]">{value}</p>
-    </div>
-  )
-}
-
-function SummaryStrip({
-  title,
-  value,
-  detail,
-}: {
-  title: string
-  value: number | string
-  detail: string
-}) {
-  return (
-    <div className="border border-border/70 bg-muted/16 px-4 py-3">
-      <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
-      <p className="mt-2 break-all text-sm font-medium">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
-    </div>
-  )
-}
-
-function ItemRow({ item }: { item: RunItemOutcome }) {
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <RunActionBadge action={item.action} />
-        {item.optionId ? <Badge variant="outline">Option {item.optionId}</Badge> : null}
-        {item.externalRef ? <Badge variant="outline">{item.externalRef}</Badge> : null}
-      </div>
-      <p className="break-all text-sm font-medium">{item.key}</p>
-      <p className="text-xs text-muted-foreground">
-        {item.decision?.reason ?? "No decision metadata"} · {item.latencyMs}ms
-      </p>
-      <div className="grid gap-2 md:grid-cols-2">
-        <SummaryStrip
-          title="Files"
-          value={`${item.files.uploaded}/${item.files.skippedExisting}`}
-          detail={`${item.files.failed} failed · ${item.files.wouldUpload} would upload`}
-        />
-        <SummaryStrip
-          title="Patch"
-          value={item.audit?.patchStrategy ?? "n/a"}
-          detail={
-            item.decision?.jsonPatchOperations?.length
-              ? `${item.decision.jsonPatchOperations.length} ops`
-              : item.error ?? "No diff ops"
-          }
-        />
-      </div>
-    </div>
-  )
-}
-
-function TimelineEventCard({ event }: { event: TelemetryEvent }) {
-  return (
-    <Card className="overflow-hidden border border-border/70 bg-muted/14">
-      <CardHeader className="gap-2 border-b border-border/70">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            variant={
-              event.level === "error"
-                ? "destructive"
-                : event.level === "warn"
-                  ? "outline"
-                  : "secondary"
-            }
-          >
-            {event.level}
-          </Badge>
-          <Badge variant="outline">{event.component}</Badge>
-          <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-            {formatDateTime(event.timestamp)}
-          </span>
-        </div>
-        <CardTitle className="text-sm">{event.event}</CardTitle>
-        {event.message ? <CardDescription>{event.message}</CardDescription> : null}
-      </CardHeader>
-      <CardContent className="space-y-3 pt-4">
-        {event.itemKey ? (
-          <div className="text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Item:</span> {event.itemKey}
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={45} minSize={25}>
+              <ItemDetailPanel item={selectedItem ?? null} detail={selectedDetail} />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        ) : (
+          <div className="h-full rounded-md border border-border/70 bg-background/86 p-3">
+            <ActivityFeed
+              events={state.snapshot.events}
+              connectionState={state.connectionState}
+            />
           </div>
-        ) : null}
-        <StructuredDataPanel value={event.data} />
-      </CardContent>
-    </Card>
-  )
-}
-
-function ArtifactCard({ artifact }: { artifact: RunItemDetail["artifacts"][number] }) {
-  return (
-    <Card className="overflow-hidden border border-border/70 bg-background/90">
-      <CardHeader className="gap-2 border-b border-border/70">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{artifact.step}</Badge>
-          <Badge variant="secondary">{artifact.artifactType}</Badge>
-        </div>
-        <CardDescription>
-          {artifact.contentType} · {formatDateTime(artifact.createdAt)}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="pt-4">
-        <StructuredDataPanel value={artifact.payload} />
-      </CardContent>
-    </Card>
-  )
-}
-
-function HttpExchangeCard({ exchange }: { exchange: RunItemDetail["httpExchanges"][number] }) {
-  return (
-    <Card className="overflow-hidden border border-border/70 bg-background/90">
-      <CardHeader className="gap-2 border-b border-border/70">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{exchange.method}</Badge>
-          {exchange.status ? (
-            <Badge variant={exchange.status >= 400 ? "destructive" : "secondary"}>
-              {exchange.status}
-            </Badge>
-          ) : null}
-          {exchange.step ? <Badge variant="outline">{exchange.step}</Badge> : null}
-        </div>
-        <CardTitle className="break-all text-sm">{exchange.path}</CardTitle>
-        <CardDescription>
-          {exchange.durationMs ? `${exchange.durationMs}ms` : "No duration"} ·{" "}
-          {formatDateTime(exchange.createdAt)}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 pt-4">
-        {exchange.error ? (
-          <MutedState message={exchange.error} tone="error" />
-        ) : null}
-        <StructuredDataPanel label="Request headers" value={exchange.requestHeaders} />
-        <StructuredDataPanel label="Request body" value={exchange.requestBody} />
-        <StructuredDataPanel label="Response headers" value={exchange.responseHeaders} />
-        <StructuredDataPanel label="Response body" value={exchange.responseBody} />
-      </CardContent>
-    </Card>
-  )
-}
-
-function FileAttemptCard({ attempt }: { attempt: RunItemDetail["fileSyncAttempts"][number] }) {
-  return (
-    <Card className="overflow-hidden border border-border/70 bg-background/90">
-      <CardHeader className="gap-2 border-b border-border/70">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{attempt.stage}</Badge>
-          <Badge variant={attempt.status.includes("failed") ? "destructive" : "secondary"}>
-            {attempt.status}
-          </Badge>
-        </div>
-        <CardTitle className="break-all text-sm">{attempt.fileName}</CardTitle>
-        <CardDescription>{formatDateTime(attempt.createdAt)}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 pt-4">
-        {attempt.sourceUrl ? (
-          <div className="break-all text-xs text-muted-foreground">{attempt.sourceUrl}</div>
-        ) : null}
-        {attempt.error ? <MutedState message={attempt.error} tone="error" /> : null}
-        <StructuredDataPanel label="Request" value={attempt.request} />
-        <StructuredDataPanel label="Response" value={attempt.response} />
-      </CardContent>
-    </Card>
-  )
-}
-
-function StepEventCard({ event }: { event: RunItemDetail["stepEvents"][number] }) {
-  return (
-    <Card className="overflow-hidden border border-border/70 bg-muted/14">
-      <CardHeader className="gap-2 border-b border-border/70">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            variant={
-              event.level === "error"
-                ? "destructive"
-                : event.level === "warn"
-                  ? "outline"
-                  : "secondary"
-            }
-          >
-            {event.level}
-          </Badge>
-          {event.step ? <Badge variant="outline">{event.step}</Badge> : null}
-          <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-            {formatDateTime(event.createdAt)}
-          </span>
-        </div>
-        <CardTitle className="text-sm">{event.event}</CardTitle>
-        {event.message ? <CardDescription>{event.message}</CardDescription> : null}
-      </CardHeader>
-      <CardContent className="pt-4">
-        <StructuredDataPanel value={event.data} />
-      </CardContent>
-    </Card>
-  )
-}
-
-function StructuredDataPanel({
-  label,
-  value,
-}: {
-  label?: string
-  value: JsonValue | undefined
-}) {
-  if (value === undefined) {
-    return null
-  }
-
-  return (
-    <div className="space-y-2">
-      {label ? (
-        <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      ) : null}
-      <StructuredDataView value={value} depth={0} />
-    </div>
-  )
-}
-
-function StructuredDataView({
-  value,
-  depth,
-}: {
-  value: JsonValue
-  depth: number
-}) {
-  if (isPrimitive(value)) {
-    return (
-      <div className="border border-border/70 bg-muted/14 px-3 py-2 text-xs text-foreground">
-        {formatValue(value)}
+        )}
       </div>
-    )
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return <MutedState message="Empty list" />
-    }
-
-    if (value.every(isPrimitive)) {
-      return (
-        <Table className="table-fixed">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-20">Index</TableHead>
-              <TableHead className="whitespace-normal">Value</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {value.map((entry, index) => (
-              <TableRow key={`${index}-${String(entry)}`}>
-                <TableCell className="align-top text-muted-foreground">{index}</TableCell>
-                <TableCell className="whitespace-normal break-words align-top">
-                  {formatValue(entry)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )
-    }
-
-    if (value.every(isObjectRecord)) {
-      const keys = [...new Set(value.flatMap((entry) => Object.keys(entry)))]
-
-      return (
-        <Table className="table-fixed">
-          <TableHeader>
-            <TableRow>
-              {keys.map((key) => (
-                <TableHead key={key} className="whitespace-normal">
-                  {key}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {value.map((entry, index) => (
-              <TableRow key={`${depth}-${index}`}>
-                {keys.map((key) => (
-                  <TableCell key={key} className="whitespace-normal break-words align-top">
-                    <InlineValue value={entry[key]} />
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )
-    }
-
-    return (
-      <div className="space-y-3">
-        {value.map((entry, index) => (
-          <div key={`${depth}-${index}`} className="space-y-2 border border-border/70 p-3">
-            <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              Row {index + 1}
-            </p>
-            <StructuredDataView value={entry} depth={depth + 1} />
-          </div>
-        ))}
-      </div>
-    )
-  }
-
-  const entries = Object.entries(value)
-  const simpleEntries = entries.filter(
-    (entry): entry is [string, string | number | boolean | null] => isPrimitive(entry[1])
-  )
-  const complexEntries = entries.filter(([, entryValue]) => !isPrimitive(entryValue))
-
-  return (
-    <div className="space-y-3">
-      {simpleEntries.length > 0 ? (
-        <Table className="table-fixed">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-56 whitespace-normal">Field</TableHead>
-              <TableHead className="whitespace-normal">Value</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {simpleEntries.map(([key, entryValue]) => (
-              <TableRow key={key}>
-                <TableCell className="align-top font-medium text-foreground/80">
-                  {key}
-                </TableCell>
-                <TableCell className="whitespace-normal break-words align-top">
-                  {formatValue(entryValue)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      ) : null}
-
-      {complexEntries.map(([key, entryValue]) => (
-        <div key={key} className="space-y-2 border border-border/70 p-3">
-          <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{key}</p>
-          <StructuredDataView value={entryValue} depth={depth + 1} />
-        </div>
-      ))}
     </div>
   )
-}
-
-function InlineValue({ value }: { value: JsonValue | undefined }) {
-  if (value === undefined) {
-    return <span className="text-muted-foreground">n/a</span>
-  }
-
-  if (isPrimitive(value)) {
-    return <span>{formatValue(value)}</span>
-  }
-
-  if (Array.isArray(value)) {
-    return <span>{`${value.length} item${value.length === 1 ? "" : "s"}`}</span>
-  }
-
-  return <span>{`${Object.keys(value).length} fields`}</span>
-}
-
-function ConnectionBadge({
-  state,
-}: {
-  state: "live" | "connecting" | "reconnecting" | "closed"
-}) {
-  const variant =
-    state === "live" ? "secondary" : state === "closed" ? "outline" : "default"
-
-  return <Badge variant={variant}>{state}</Badge>
-}
-
-function RunActionBadge({ action }: { action: RunItemOutcome["action"] }) {
-  const variant =
-    action === "skip_unchanged"
-      ? "outline"
-      : action.includes("error")
-        ? "destructive"
-        : action.startsWith("update")
-          ? "secondary"
-          : "default"
-
-  return <Badge variant={variant}>{action.replaceAll("_", " ")}</Badge>
-}
-
-function MutedState({
-  message,
-  tone = "default",
-}: {
-  message: string
-  tone?: "default" | "error"
-}) {
-  return (
-    <div
-      className={[
-        "border px-4 py-5 text-sm",
-        tone === "error"
-          ? "border-destructive/20 bg-destructive/8 text-destructive"
-          : "border-border/70 bg-muted/16 text-muted-foreground",
-      ].join(" ")}
-    >
-      {message}
-    </div>
-  )
-}
-
-function formatDateTime(value: string) {
-  return format(new Date(value), "dd MMM yyyy HH:mm:ss")
-}
-
-function formatRelativeTime(value: string) {
-  return formatDistanceToNowStrict(new Date(value), { addSuffix: true })
-}
-
-function formatRunDuration(startedAt?: string, finishedAt?: string) {
-  if (!startedAt) {
-    return "Queued"
-  }
-
-  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now()
-  const start = new Date(startedAt).getTime()
-  return `${Math.max(0, end - start)}ms`
 }
 
 function resolveStreamBaseUrl(serverValue: string | null) {
   if (serverValue) {
-    return normalizeBaseUrl(serverValue)
+    return serverValue.endsWith("/") ? serverValue.slice(0, -1) : serverValue
   }
 
-  if (typeof window === "undefined") {
-    return null
-  }
+  if (typeof window === "undefined") return null
 
   const { origin, hostname, protocol, port } = window.location
-  if (port === "3001") {
-    return `${protocol}//${hostname}:3000`
-  }
-
+  if (port === "3001") return `${protocol}//${hostname}:3000`
   return origin
 }
 
-function normalizeBaseUrl(value: string) {
-  return value.endsWith("/") ? value.slice(0, -1) : value
-}
-
-function isPrimitive(value: JsonValue): value is string | number | boolean | null {
-  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-}
-
-function isObjectRecord(value: JsonValue): value is { [key: string]: JsonValue } {
-  return !Array.isArray(value) && typeof value === "object" && value !== null
-}
-
-function formatValue(value: string | number | boolean | null) {
-  if (value === null) {
-    return "null"
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "true" : "false"
-  }
-
-  return String(value)
-}
-
-function isErroredItem(item: RunItemOutcome) {
-  return item.action.includes("error") || Boolean(item.error)
-}
-
-function isTerminalStatus(status: RunSnapshot["report"]["status"]) {
+function isTerminalStatus(status: string) {
   return status === "completed" || status === "failed" || status === "cancelled"
 }
