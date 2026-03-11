@@ -5,7 +5,6 @@ import type { TelemetryEvent } from "@/lib/run-types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -188,6 +187,8 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
                 return (
                   <div
                     key={event.id}
+                    data-index={virtualItem.index}
+                    ref={virtualizer.measureElement}
                     style={{
                       position: "absolute",
                       top: 0,
@@ -196,7 +197,15 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
                       transform: `translateY(${virtualItem.start}px)`,
                     }}
                   >
-                    <EventRow event={event} />
+                    <EventRow event={event} onToggle={() => {
+                      // After the collapsible animates, re-measure this element.
+                      // Use a short delay to let the DOM settle after open/close.
+                      requestAnimationFrame(() => {
+                        virtualizer.measureElement(
+                          parentRef.current?.querySelector(`[data-index="${virtualItem.index}"]`) ?? null
+                        )
+                      })
+                    }} />
                   </div>
                 )
               })}
@@ -222,51 +231,72 @@ export function ActivityFeed({ events }: ActivityFeedProps) {
   )
 }
 
-function EventRow({ event }: { event: TelemetryEvent }) {
+function EventRow({ event, onToggle }: { event: TelemetryEvent; onToggle: () => void }) {
+  const [open, setOpen] = useState(false)
+
   return (
-    <Collapsible>
-      <CollapsibleTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 border-b border-border/40 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/10"
+    <div>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 border-b border-border/40 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/10"
+        onClick={() => {
+          setOpen((prev) => !prev)
+          // Defer re-measure to after the content renders
+          requestAnimationFrame(() => {
+            requestAnimationFrame(onToggle)
+          })
+        }}
+      >
+        <Badge
+          variant={
+            event.level === "error"
+              ? "destructive"
+              : event.level === "warn"
+                ? "outline"
+                : "secondary"
+          }
+          className="shrink-0 text-[10px]"
         >
-          <Badge
-            variant={
-              event.level === "error"
-                ? "destructive"
-                : event.level === "warn"
-                  ? "outline"
-                  : "secondary"
-            }
-            className="shrink-0 text-[10px]"
-          >
-            {event.level}
-          </Badge>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="shrink-0 text-muted-foreground">
-                {formatRelativeTime(event.timestamp)}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">{formatDateTime(event.timestamp)}</TooltipContent>
-          </Tooltip>
-          <Badge variant="outline" className="shrink-0 text-[10px]">
-            {event.component}
-          </Badge>
-          <span className="min-w-0 flex-1 truncate font-medium">{event.event}</span>
-          {event.message ? (
-            <span className="min-w-0 max-w-[30%] truncate text-muted-foreground">
-              {event.message}
+          {event.level}
+        </Badge>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="shrink-0 text-muted-foreground">
+              {formatRelativeTime(event.timestamp)}
             </span>
-          ) : null}
-          {event.durationMs !== undefined ? (
-            <span className="shrink-0 font-mono text-muted-foreground">
-              {event.durationMs}ms
-            </span>
-          ) : null}
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent>
+          </TooltipTrigger>
+          <TooltipContent side="top">{formatDateTime(event.timestamp)}</TooltipContent>
+        </Tooltip>
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          {event.component}
+        </Badge>
+        <span className="min-w-0 flex-1 truncate font-medium">{event.event}</span>
+        {event.message ? (
+          <span className="min-w-0 max-w-[30%] truncate text-muted-foreground">
+            {event.message}
+          </span>
+        ) : null}
+        {event.durationMs !== undefined ? (
+          <span className="shrink-0 font-mono text-muted-foreground">
+            {event.durationMs}ms
+          </span>
+        ) : null}
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open ? (
         <div className="space-y-2 border-b border-border/40 bg-muted/5 px-3 py-2 text-xs">
           {event.itemKey ? (
             <div>
@@ -280,7 +310,7 @@ function EventRow({ event }: { event: TelemetryEvent }) {
             </pre>
           ) : null}
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      ) : null}
+    </div>
   )
 }
