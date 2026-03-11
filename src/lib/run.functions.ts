@@ -31,6 +31,15 @@ export const getRunSnapshot = createServerFn({ method: "GET" })
     return snapshot as RunSnapshot
   })
 
+export const getRunStreamBaseUrl = createServerFn({ method: "GET" }).handler(async () => {
+  const baseUrl =
+    process.env.UPSERTER_API_BASE_URL ??
+    process.env.VITE_UPSERTER_API_BASE_URL ??
+    null
+
+  return typeof baseUrl === "string" && baseUrl.length > 0 ? baseUrl : null
+})
+
 export const getRunItemDetail = createServerFn({ method: "GET" })
   .inputValidator((data: { runId: string; itemKey: string }) => data)
   .handler(async ({ data }) => {
