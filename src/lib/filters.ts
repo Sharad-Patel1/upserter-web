@@ -1,7 +1,9 @@
 import type { RunItemOutcome, UpsertAction } from "@/lib/run-types"
+import { parseItemKey } from "@/lib/format"
 
 export interface ItemFilters {
   actions: Array<UpsertAction>
+  brands: Array<string>
   hasError: boolean | null
   hasFiles: "any" | "has-uploads" | "has-failures" | "no-files"
   latencyRange: "any" | "fast" | "medium" | "slow" | "custom"
@@ -19,6 +21,7 @@ export interface ItemFilters {
 
 export const DEFAULT_FILTERS: ItemFilters = {
   actions: [],
+  brands: [],
   hasError: null,
   hasFiles: "any",
   latencyRange: "any",
@@ -41,10 +44,18 @@ function matchesAction(item: RunItemOutcome, actions: Array<UpsertAction>) {
   })
 }
 
+function matchesBrand(item: RunItemOutcome, brands: Array<string>) {
+  if (brands.length === 0) return true
+  return brands.includes(parseItemKey(item.key).brand)
+}
+
 function matchesSearch(item: RunItemOutcome, search: string) {
   if (!search) return true
+  const parsed = parseItemKey(item.key)
   const haystack = [
     item.key,
+    parsed.productName,
+    parsed.brand,
     item.externalRef,
     item.optionId ? String(item.optionId) : "",
     item.error,
@@ -151,6 +162,7 @@ export function applyItemFilters(
   const filtered = items.filter(
     (item) =>
       matchesAction(item, filters.actions) &&
+      matchesBrand(item, filters.brands) &&
       matchesSearch(item, filters.search) &&
       matchesLatency(item, filters) &&
       matchesHasError(item, filters.hasError) &&
@@ -173,6 +185,7 @@ export function applyItemFilters(
 export function serializeFilters(filters: ItemFilters): Record<string, string> {
   const params: Record<string, string> = {}
   if (filters.actions.length > 0) params.actions = filters.actions.join(",")
+  if (filters.brands.length > 0) params.brands = filters.brands.join(",")
   if (filters.hasError !== null) params.hasError = String(filters.hasError)
   if (filters.hasFiles !== "any") params.hasFiles = filters.hasFiles
   if (filters.latencyRange !== "any") params.latencyRange = filters.latencyRange
@@ -192,6 +205,7 @@ export function serializeFilters(filters: ItemFilters): Record<string, string> {
 export function deserializeFilters(params: Record<string, string>): Partial<ItemFilters> {
   const result: Partial<ItemFilters> = {}
   if (params.actions) result.actions = params.actions.split(",") as Array<UpsertAction>
+  if (params.brands) result.brands = params.brands.split(",")
   if (params.hasError) result.hasError = params.hasError === "true"
   if (params.hasFiles) result.hasFiles = params.hasFiles as ItemFilters["hasFiles"]
   if (params.latencyRange) result.latencyRange = params.latencyRange as ItemFilters["latencyRange"]

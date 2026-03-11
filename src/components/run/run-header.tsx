@@ -1,23 +1,12 @@
-import { Link } from "@tanstack/react-router"
-
 import type { RunSnapshot } from "@/lib/run-types"
 import { Badge } from "@/components/ui/badge"
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ConnectionIndicator } from "@/components/shell/connection-indicator"
-import { SummaryMetric, SummaryStrip } from "@/components/run/run-metrics"
 import { RunStatusIndicator } from "@/components/run/run-status-indicator"
 import { useElapsedTime } from "@/hooks/use-elapsed-time"
 import { formatDateTime, formatRelativeTime, truncateMiddle } from "@/lib/format"
+import { cn } from "@/lib/utils"
 
 interface RunHeaderProps {
   snapshot: RunSnapshot
@@ -29,7 +18,6 @@ interface RunHeaderProps {
 export function RunHeader({
   snapshot,
   connectionState,
-  lastHeartbeatAt,
   streamError,
 }: RunHeaderProps) {
   const { report } = snapshot
@@ -41,99 +29,92 @@ export function RunHeader({
     : undefined
 
   return (
-    <Card className="overflow-hidden border border-foreground/10 bg-background/88 backdrop-blur-sm">
-      <CardHeader className="gap-3 border-b border-border/70">
-        <Breadcrumb>
-          <BreadcrumbList>
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link to="/">Dashboard</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>Run</BreadcrumbPage>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <BreadcrumbPage>{truncateMiddle(report.runId, 20)}</BreadcrumbPage>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{report.runId}</TooltipContent>
-              </Tooltip>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <RunStatusIndicator status={report.status} animate={isRunning} />
-          <Badge variant="outline">{report.mode}</Badge>
-          <ConnectionIndicator state={connectionState} />
-          {streamError ? (
-            <span className="text-xs text-amber-600">{streamError}</span>
-          ) : null}
-        </div>
-
-        <p className="text-sm text-muted-foreground">
-          Created {formatRelativeTime(report.createdAt)}
-          {lastHeartbeatAt ? ` · heartbeat ${formatRelativeTime(lastHeartbeatAt)}` : ""}
-        </p>
-
-        {progress !== undefined ? (
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>Progress</span>
-              <span>
-                {report.totals.scanned} / {report.options.limit}
-              </span>
-            </div>
-            <Progress value={progress} className="h-2" />
-          </div>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <h1 className="text-sm font-semibold tracking-tight">
+              {truncateMiddle(report.runId, 20)}
+            </h1>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="font-mono text-xs">{report.runId}</TooltipContent>
+        </Tooltip>
+        <RunStatusIndicator status={report.status} animate={isRunning} />
+        <Badge variant="outline" className="text-[10px]">{report.mode}</Badge>
+        <ConnectionIndicator state={connectionState} />
+        <span className="text-xs text-muted-foreground">
+          {formatRelativeTime(report.createdAt)}
+        </span>
+        <span className="text-xs font-mono text-muted-foreground">{duration}</span>
+        {streamError ? (
+          <span className="text-[11px] text-amber-600">{streamError}</span>
         ) : null}
+      </div>
 
-        <div className="grid shrink-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryMetric label="Scanned" value={report.totals.scanned} />
-          <SummaryMetric label="Created" value={report.totals.created} />
-          <SummaryMetric label="Updated" value={report.totals.updated} />
-          <SummaryMetric
-            label="Errors"
-            value={report.totals.errored}
-            tone={report.totals.errored > 0 ? "error" : "default"}
-          />
+      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <Metric label="scanned" value={report.totals.scanned} />
+        <Metric label="created" value={report.totals.created} />
+        <Metric label="updated" value={report.totals.updated} />
+        <Metric
+          label="errors"
+          value={report.totals.errored}
+          tone={report.totals.errored > 0 ? "error" : undefined}
+        />
+        <Metric label="files" value={report.totals.filesUploaded} />
+
+        {report.checkpoint.lastProcessedKey ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-[11px] text-muted-foreground">
+                @ {truncateMiddle(report.checkpoint.lastProcessedKey, 24)}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-sm break-all font-mono text-xs">
+              Checkpoint: {report.checkpoint.lastProcessedKey}
+              {report.checkpoint.updatedAt ? (
+                <span className="block text-muted-foreground">
+                  {formatDateTime(report.checkpoint.updatedAt)}
+                </span>
+              ) : null}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
+
+      {progress !== undefined && isRunning ? (
+        <div className="flex items-center gap-3">
+          <Progress value={progress} className="h-1.5 flex-1" />
+          <span className="text-[11px] font-mono text-muted-foreground">
+            {report.totals.scanned}/{report.options.limit}
+          </span>
         </div>
-      </CardHeader>
+      ) : null}
+    </div>
+  )
+}
 
-      <CardContent className="grid gap-3 pt-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryStrip
-          title="Checkpoint"
-          value={report.checkpoint.lastProcessedKey ?? "Waiting for first item"}
-          detail={
-            report.checkpoint.updatedAt
-              ? formatDateTime(report.checkpoint.updatedAt)
-              : "No checkpoint yet"
-          }
-        />
-        <SummaryStrip
-          title="Duration"
-          value={duration}
-          detail={
-            report.startedAt
-              ? `Started ${formatDateTime(report.startedAt)}`
-              : "Queued only"
-          }
-        />
-        <SummaryStrip
-          title="Artifacts"
-          value={snapshot.audit.artifactCount}
-          detail={`${snapshot.audit.httpExchangeCount} HTTP exchanges · ${snapshot.audit.fileSyncAttemptCount} file steps`}
-        />
-        <SummaryStrip
-          title="Runtime"
-          value={snapshot.runtime.activeRunCount}
-          detail={`${snapshot.runtime.pendingUpdateChains} pending update chains`}
-        />
-      </CardContent>
-    </Card>
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string
+  value: number
+  tone?: "error"
+}) {
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span
+        className={cn(
+          "text-base font-semibold tabular-nums tracking-tight",
+          tone === "error" && value > 0 && "text-destructive"
+        )}
+      >
+        {value.toLocaleString()}
+      </span>
+      <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+        {label}
+      </span>
+    </span>
   )
 }

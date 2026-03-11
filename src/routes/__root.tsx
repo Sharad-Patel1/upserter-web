@@ -99,8 +99,8 @@ function RootLayout() {
     <TooltipProvider>
       <SidebarProvider>
         <AppSidebar health={health} />
-        <SidebarInset>
-          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border/60 bg-background/80 px-4 backdrop-blur-sm">
+        <SidebarInset className="overflow-hidden">
+          <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-background/80 px-4 backdrop-blur-sm">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4" />
             <Breadcrumb>
@@ -122,7 +122,7 @@ function RootLayout() {
               </kbd>
             </div>
           </header>
-          <div className="flex-1">
+          <div className="min-h-0 flex-1 overflow-hidden">
             <Outlet />
           </div>
         </SidebarInset>

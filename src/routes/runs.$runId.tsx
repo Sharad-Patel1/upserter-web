@@ -3,7 +3,7 @@ import { startTransition, useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import type { RunItemDetail, RunSnapshot, RunStreamEvent } from "@/lib/run-types"
-import type {ItemFilters} from "@/lib/filters";
+import type { ItemFilters } from "@/lib/filters"
 import { Button } from "@/components/ui/button"
 import {
   ResizableHandle,
@@ -20,7 +20,7 @@ import {
   getRunStreamBaseUrl,
 } from "@/lib/run.functions"
 import { createRunConsoleState, reduceRunConsoleEvent } from "@/lib/run-reducer"
-import { DEFAULT_FILTERS  } from "@/lib/filters"
+import { DEFAULT_FILTERS } from "@/lib/filters"
 
 type ItemDetailState = { loading: boolean; data?: RunItemDetail; error?: string }
 type MainView = "items" | "activity"
@@ -184,8 +184,6 @@ function RunDetailPage() {
   useEffect(() => {
     if (!selectedKey) return
 
-    // Guard via the setter to avoid depending on detailsByKey in the dep array.
-    // We track whether the updater decided to skip via a mutable ref object.
     const gate = { skip: false }
     setDetailsByKey((current) => {
       const existing = current[selectedKey] as ItemDetailState | undefined
@@ -231,58 +229,69 @@ function RunDetailPage() {
   }, [selectedKey, state.snapshot.report.items])
 
   return (
-    <div className="flex h-[calc(100svh-3rem)] flex-col gap-3 px-4 py-4 md:px-6">
-      <RunHeader
-        snapshot={state.snapshot}
-        connectionState={state.connectionState}
-        lastHeartbeatAt={state.lastHeartbeatAt}
-        streamError={streamError}
-      />
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* ── Compact header ──────────────────────────────────────── */}
+      <div className="shrink-0 border-b border-border/50 px-4 py-2.5 md:px-5">
+        <RunHeader
+          snapshot={state.snapshot}
+          connectionState={state.connectionState}
+          lastHeartbeatAt={state.lastHeartbeatAt}
+          streamError={streamError}
+        />
+      </div>
 
-      <div className="flex items-center gap-2">
+      {/* ── View tabs ───────────────────────────────────────────── */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-border/50 px-4 py-1.5 md:px-5">
         <Button
           size="sm"
-          variant={mainView === "items" ? "default" : "outline"}
+          variant={mainView === "items" ? "default" : "ghost"}
+          className="h-7 text-xs"
           onClick={() => setMainView("items")}
         >
           Items
-          <span className="ml-1 text-[10px] uppercase tracking-[0.16em]">
+          <span className="ml-1 tabular-nums text-[10px] opacity-70">
             {state.snapshot.report.items.length}
           </span>
         </Button>
         <Button
           size="sm"
-          variant={mainView === "activity" ? "default" : "outline"}
+          variant={mainView === "activity" ? "default" : "ghost"}
+          className="h-7 text-xs"
           onClick={() => setMainView("activity")}
         >
           Activity
-          <span className="ml-1 text-[10px] uppercase tracking-[0.16em]">
+          <span className="ml-1 tabular-nums text-[10px] opacity-70">
             {state.snapshot.events.length}
           </span>
         </Button>
       </div>
 
+      {/* ── Main content area ───────────────────────────────────── */}
       <div className="min-h-0 flex-1">
         {mainView === "items" ? (
-          <ResizablePanelGroup orientation="horizontal" className="h-full rounded-md border border-border/70 bg-background/86">
-            <ResizablePanel defaultSize={55} minSize={30}>
-              <div className="h-full overflow-auto p-3">
-                <ItemsBrowser
-                  items={state.snapshot.report.items}
-                  selectedKey={selectedKey}
-                  onSelectItem={setSelectedKey}
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                />
+          <ResizablePanelGroup orientation="horizontal" className="h-full">
+            <ResizablePanel defaultSize={50} minSize={30}>
+              <div className="flex h-full flex-col overflow-hidden">
+                <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
+                  <ItemsBrowser
+                    items={state.snapshot.report.items}
+                    selectedKey={selectedKey}
+                    onSelectItem={setSelectedKey}
+                    filters={filters}
+                    onFiltersChange={setFilters}
+                  />
+                </div>
               </div>
             </ResizablePanel>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={45} minSize={25}>
-              <ItemDetailPanel item={selectedItem ?? null} detail={selectedDetail} />
+            <ResizablePanel defaultSize={50} minSize={25}>
+              <div className="h-full overflow-hidden">
+                <ItemDetailPanel item={selectedItem ?? null} detail={selectedDetail} />
+              </div>
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
-          <div className="h-full rounded-md border border-border/70 bg-background/86 p-3">
+          <div className="h-full overflow-hidden p-3">
             <ActivityFeed
               events={state.snapshot.events}
               connectionState={state.connectionState}

@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { FilePreview } from "@/components/data/file-preview"
 import { formatDateTime, truncateMiddle } from "@/lib/format"
 
 export const FileSyncTable = memo(function FileSyncTable({
@@ -30,6 +31,7 @@ export const FileSyncTable = memo(function FileSyncTable({
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead className="w-14">Preview</TableHead>
           <TableHead className="w-24">Stage</TableHead>
           <TableHead className="w-28">Status</TableHead>
           <TableHead>Filename</TableHead>
@@ -41,6 +43,9 @@ export const FileSyncTable = memo(function FileSyncTable({
       <TableBody>
         {attempts.map((attempt) => (
           <TableRow key={attempt.id}>
+            <TableCell className="py-1">
+              <FilePreview attempt={attempt} size="sm" />
+            </TableCell>
             <TableCell>
               <Badge variant="outline" className="text-[10px]">
                 {attempt.stage}
@@ -54,16 +59,21 @@ export const FileSyncTable = memo(function FileSyncTable({
                 {attempt.status}
               </Badge>
             </TableCell>
-            <TableCell className="max-w-[200px] truncate font-medium">
-              {attempt.fileName}
+            <TableCell className="max-w-[200px]">
+              <span className="block truncate font-medium text-xs">{attempt.fileName}</span>
             </TableCell>
             <TableCell className="max-w-[200px]">
               {attempt.sourceUrl ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="cursor-help truncate text-xs text-muted-foreground">
+                    <a
+                      href={attempt.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="truncate text-xs text-primary/80 underline-offset-2 hover:text-primary hover:underline"
+                    >
                       {truncateMiddle(attempt.sourceUrl, 40)}
-                    </span>
+                    </a>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-md break-all">
                     {attempt.sourceUrl}

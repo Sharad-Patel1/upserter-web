@@ -1,8 +1,7 @@
 import { useDeferredValue, useMemo } from "react"
 
 import type { RunItemOutcome } from "@/lib/run-types"
-import type {ItemFilters} from "@/lib/filters";
-import { Button } from "@/components/ui/button"
+import type { ItemFilters } from "@/lib/filters"
 import {
   Pagination,
   PaginationContent,
@@ -24,8 +23,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { FilterBar } from "@/components/run/filter-bar"
 import { RunActionBadge } from "@/components/run/run-status-indicator"
 import { MutedState } from "@/components/run/run-metrics"
-import { formatLatency, formatRelativeTime, truncateMiddle } from "@/lib/format"
-import {  applyItemFilters, getQuickFilterCounts } from "@/lib/filters"
+import { formatLatency, formatRelativeTime, getBrandsFromItems, parseItemKey } from "@/lib/format"
+import { applyItemFilters, getQuickFilterCounts } from "@/lib/filters"
 import { cn } from "@/lib/utils"
 
 interface ItemsBrowserProps {
@@ -53,6 +52,7 @@ export function ItemsBrowser({
     [items, activeFilters]
   )
   const counts = useMemo(() => getQuickFilterCounts(items), [items])
+  const availableBrands = useMemo(() => getBrandsFromItems(items), [items])
 
   function handleSort(field: ItemFilters["sortField"]) {
     if (filters.sortField === field) {
@@ -76,24 +76,28 @@ export function ItemsBrowser({
   }) {
     return (
       <TableHead className={className}>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-auto -ml-2 px-2 py-0 text-xs font-medium"
+        <button
+          type="button"
+          className="inline-flex items-center gap-0.5 text-[11px] font-medium hover:text-foreground"
           onClick={() => handleSort(field)}
         >
           {children}
           {filters.sortField === field ? (
-            <span className="ml-1">{filters.sortDirection === "asc" ? "\u2191" : "\u2193"}</span>
+            <span className="text-[10px]">{filters.sortDirection === "asc" ? "\u2191" : "\u2193"}</span>
           ) : null}
-        </Button>
+        </button>
       </TableHead>
     )
   }
 
   return (
-    <div className="flex h-full flex-col gap-3">
-      <FilterBar filters={filters} onChange={onFiltersChange} counts={counts} />
+    <div className="flex h-full flex-col gap-2">
+      <FilterBar
+        filters={filters}
+        onChange={onFiltersChange}
+        counts={counts}
+        availableBrands={availableBrands}
+      />
 
       {page.length === 0 ? (
         <MutedState message="No items match the current filter." />
@@ -101,29 +105,20 @@ export function ItemsBrowser({
         <div className="min-h-0 flex-1 overflow-auto">
           <Table>
             <TableHeader>
-              <TableRow>
-                <SortHeader field="key">Key</SortHeader>
-                <TableHead className="w-24">Ref</TableHead>
-                <SortHeader field="action" className="w-28">
-                  Action
-                </SortHeader>
-                <TableHead className="w-20">Option</TableHead>
-                <SortHeader field="latencyMs" className="w-20 text-right">
-                  Latency
-                </SortHeader>
-                <SortHeader field="files" className="w-20 text-center">
-                  Files
-                </SortHeader>
-                <TableHead className="w-8"></TableHead>
-                <SortHeader field="startedAt" className="w-28">
-                  Started
-                </SortHeader>
+              <TableRow className="hover:bg-transparent">
+                <SortHeader field="key" className="min-w-[140px]">Product</SortHeader>
+                <SortHeader field="action" className="w-24">Action</SortHeader>
+                <SortHeader field="latencyMs" className="w-16 text-right">Time</SortHeader>
+                <SortHeader field="files" className="w-14 text-center">Files</SortHeader>
+                <TableHead className="w-5"></TableHead>
+                <SortHeader field="startedAt" className="w-20">When</SortHeader>
               </TableRow>
             </TableHeader>
             <TableBody>
               {page.map((item) => {
                 const latency = formatLatency(item.latencyMs)
                 const isErrored = item.action.includes("error") || Boolean(item.error)
+                const parsed = parseItemKey(item.key)
 
                 return (
                   <TableRow
@@ -134,31 +129,30 @@ export function ItemsBrowser({
                     )}
                     onClick={() => onSelectItem(item.key)}
                   >
-                    <TableCell className="max-w-[240px]">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="block truncate font-medium text-xs">
-                            {truncateMiddle(item.key, 36)}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-md break-all">
-                          {item.key}
-                        </TooltipContent>
-                      </Tooltip>
+                    <TableCell className="max-w-[260px] py-1.5">
+                      <div className="flex flex-col">
+                        <span className="truncate text-xs font-medium leading-snug">
+                          {parsed.productName}
+                        </span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="truncate font-mono text-[10px] leading-snug text-muted-foreground/50">
+                              {parsed.brand !== "Other" ? `${parsed.brand} · ` : ""}{parsed.fileName}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-sm break-all font-mono text-[11px]">
+                            {item.key}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground truncate max-w-[100px]">
-                      {item.externalRef ?? "-"}
-                    </TableCell>
-                    <TableCell>
+                    <TableCell className="py-1.5">
                       <RunActionBadge action={item.action} />
                     </TableCell>
-                    <TableCell className="text-xs">
-                      {item.optionId ?? "-"}
-                    </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="py-1.5 text-right">
                       <span
                         className={cn(
-                          "text-xs font-mono",
+                          "font-mono text-[11px]",
                           latency.tone === "fast" && "text-emerald-600",
                           latency.tone === "medium" && "text-amber-600",
                           latency.tone === "slow" && "text-red-600"
@@ -167,17 +161,21 @@ export function ItemsBrowser({
                         {latency.text}
                       </span>
                     </TableCell>
-                    <TableCell className="text-center">
-                      <span className="text-xs text-muted-foreground">
-                        {item.files.uploaded}/{item.files.skippedExisting}/{item.files.failed}
-                      </span>
+                    <TableCell className="py-1.5 text-center">
+                      {item.files.uploaded + item.files.failed > 0 ? (
+                        <span className="text-[11px] tabular-nums text-muted-foreground">
+                          {item.files.uploaded}/{item.files.failed}
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground/30">&ndash;</span>
+                      )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="py-1.5">
                       {isErrored ? (
-                        <span className="inline-block h-2 w-2 rounded-full bg-destructive" />
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive" />
                       ) : null}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
+                    <TableCell className="py-1.5 text-[11px] text-muted-foreground">
                       {formatRelativeTime(item.startedAt)}
                     </TableCell>
                   </TableRow>
@@ -189,11 +187,13 @@ export function ItemsBrowser({
       )}
 
       {totalPages > 1 ? (
-        <ItemsPagination
-          currentPage={filters.page}
-          totalPages={totalPages}
-          onPageChange={(p) => onFiltersChange({ ...filters, page: p })}
-        />
+        <div className="shrink-0">
+          <ItemsPagination
+            currentPage={filters.page}
+            totalPages={totalPages}
+            onPageChange={(p) => onFiltersChange({ ...filters, page: p })}
+          />
+        </div>
       ) : null}
     </div>
   )

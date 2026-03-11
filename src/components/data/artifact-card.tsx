@@ -16,7 +16,7 @@ export const ArtifactCard = memo(function ArtifactCard({
   artifact: AuditArtifactRow
 }) {
   return (
-    <Collapsible>
+    <Collapsible defaultOpen>
       <CollapsibleTrigger asChild>
         <button
           type="button"

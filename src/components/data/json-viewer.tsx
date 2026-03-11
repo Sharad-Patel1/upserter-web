@@ -60,7 +60,7 @@ export const JsonViewer = memo(function JsonViewer({
           ) : null}
         </div>
       </div>
-      <div className="rounded-md border border-border/70 bg-muted/10 p-2 font-mono text-xs">
+      <div className="overflow-auto rounded-md border border-border/70 bg-muted/10 p-3 font-mono text-xs">
         <JsonNode value={value} depth={0} maxDepth={maxDepth} expandAll={expandAll} />
       </div>
     </div>
