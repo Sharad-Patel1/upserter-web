@@ -988,7 +988,9 @@ function StructuredDataView({
   }
 
   const entries = Object.entries(value)
-  const simpleEntries = entries.filter(([, entryValue]) => isPrimitive(entryValue))
+  const simpleEntries = entries.filter(
+    (entry): entry is [string, string | number | boolean | null] => isPrimitive(entry[1])
+  )
   const complexEntries = entries.filter(([, entryValue]) => !isPrimitive(entryValue))
 
   return (
