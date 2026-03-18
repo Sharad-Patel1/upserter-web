@@ -39,6 +39,7 @@ export interface AppliedRunOptions {
   concurrency: number
   fileConcurrency: number
   resumeFromCheckpoint: boolean
+  skipFileUploadsForExistingTenderOptions: boolean
 }
 
 export interface JsonPatchOperation {
@@ -274,6 +275,7 @@ export interface StartRunInput {
   concurrency: number
   fileConcurrency: number
   resumeFromCheckpoint: boolean
+  skipFileUploadsForExistingTenderOptions: boolean
 }
 
 export interface StartRunResponse {

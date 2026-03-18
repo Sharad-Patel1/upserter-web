@@ -17,6 +17,7 @@ function buildSnapshot(): RunSnapshot {
         concurrency: 2,
         fileConcurrency: 1,
         resumeFromCheckpoint: false,
+        skipFileUploadsForExistingTenderOptions: true,
       },
       totals: {
         scanned: 0,

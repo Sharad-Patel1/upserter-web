@@ -8,11 +8,28 @@ import type {
   StartRunInput,
   StartRunResponse,
 } from "@/lib/run-types"
-import { upserterApiRequest } from "@/lib/upserter-api.server"
+import { upserterApiFetch, upserterApiRequest } from "@/lib/upserter-api.server"
+
+async function requireServerSession() {
+  const response = await upserterApiFetch("/api/auth/get-session", {
+    method: "GET",
+  })
+
+  if (response.status === 401) {
+    throw new Error("Unauthorized")
+  }
+
+  if (!response.ok) {
+    const detail = await response.text()
+    throw new Error(`Session lookup failed (${response.status}): ${detail || response.statusText}`)
+  }
+}
 
 export const listRuns = createServerFn({ method: "GET" })
   .inputValidator((data: { limit?: number } | undefined) => data ?? {})
   .handler(async ({ data }) => {
+    await requireServerSession()
+
     const search = new URLSearchParams()
     if (data.limit) {
       search.set("limit", String(data.limit))
@@ -25,6 +42,8 @@ export const listRuns = createServerFn({ method: "GET" })
 export const getRunSnapshot = createServerFn({ method: "GET" })
   .inputValidator((data: { runId: string }) => data)
   .handler(async ({ data }) => {
+    await requireServerSession()
+
     const snapshot = await upserterApiRequest<RunSnapshot>(
       `/observability/runs/${encodeURIComponent(data.runId)}`
     )
@@ -32,18 +51,11 @@ export const getRunSnapshot = createServerFn({ method: "GET" })
     return snapshot
   })
 
-export const getRunStreamBaseUrl = createServerFn({ method: "GET" }).handler(async () => {
-  const baseUrl =
-    process.env.UPSERTER_API_BASE_URL ??
-    process.env.VITE_UPSERTER_API_BASE_URL ??
-    null
-
-  return typeof baseUrl === "string" && baseUrl.length > 0 ? baseUrl : null
-})
-
 export const getRunItemDetail = createServerFn({ method: "GET" })
   .inputValidator((data: { runId: string; itemKey: string }) => data)
   .handler(async ({ data }) => {
+    await requireServerSession()
+
     const detail = await upserterApiRequest<RunItemDetail>(
       `/observability/runs/${encodeURIComponent(data.runId)}/items/${encodeURIComponent(
         data.itemKey
@@ -55,12 +67,14 @@ export const getRunItemDetail = createServerFn({ method: "GET" })
 
 export const startRun = createServerFn({ method: "POST" })
   .inputValidator((data: StartRunInput) => data)
-  .handler(async ({ data }) =>
-    upserterApiRequest<StartRunResponse>("/upserts/tender-options/run", {
+  .handler(async ({ data }) => {
+    await requireServerSession()
+
+    return upserterApiRequest<StartRunResponse>("/upserts/tender-options/run", {
       method: "POST",
       body: JSON.stringify(data),
     })
-  )
+  })
 
 export const getHealthStatus = createServerFn({ method: "GET" }).handler(async () => {
   try {

@@ -9,9 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as RunsRunIdRouteImport } from './routes/runs.$runId'
+import { Route as ApiAuthSplatRouteImport } from './routes/api.auth.$'
+import { Route as ApiRunsRunIdStreamRouteImport } from './routes/api.runs.$runId.stream'
 
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -22,35 +30,80 @@ const RunsRunIdRoute = RunsRunIdRouteImport.update({
   path: '/runs/$runId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRunsRunIdStreamRoute = ApiRunsRunIdStreamRouteImport.update({
+  id: '/api/runs/$runId/stream',
+  path: '/api/runs/$runId/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/runs/$runId': typeof RunsRunIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/runs/$runId/stream': typeof ApiRunsRunIdStreamRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/runs/$runId': typeof RunsRunIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/runs/$runId/stream': typeof ApiRunsRunIdStreamRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/runs/$runId': typeof RunsRunIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/runs/$runId/stream': typeof ApiRunsRunIdStreamRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/runs/$runId'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/runs/$runId'
+    | '/api/auth/$'
+    | '/api/runs/$runId/stream'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/runs/$runId'
-  id: '__root__' | '/' | '/runs/$runId'
+  to:
+    | '/'
+    | '/login'
+    | '/runs/$runId'
+    | '/api/auth/$'
+    | '/api/runs/$runId/stream'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/runs/$runId'
+    | '/api/auth/$'
+    | '/api/runs/$runId/stream'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
   RunsRunIdRoute: typeof RunsRunIdRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiRunsRunIdStreamRoute: typeof ApiRunsRunIdStreamRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -65,12 +118,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsRunIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/runs/$runId/stream': {
+      id: '/api/runs/$runId/stream'
+      path: '/api/runs/$runId/stream'
+      fullPath: '/api/runs/$runId/stream'
+      preLoaderRoute: typeof ApiRunsRunIdStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
   RunsRunIdRoute: RunsRunIdRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiRunsRunIdStreamRoute: ApiRunsRunIdStreamRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

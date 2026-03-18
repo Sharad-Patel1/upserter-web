@@ -1,7 +1,7 @@
-import {  startTransition, useState } from "react"
+import { startTransition, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { toast } from "sonner"
-import type {FormEvent} from "react";
+import type { FormEvent } from "react"
 
 import type { StartRunInput } from "@/lib/run-types"
 import { Button } from "@/components/ui/button"
@@ -32,6 +32,7 @@ const DEFAULT_FORM_STATE: StartRunInput = {
   concurrency: 5,
   fileConcurrency: 2,
   resumeFromCheckpoint: false,
+  skipFileUploadsForExistingTenderOptions: true,
 }
 
 export function LaunchRunSheet({ children }: { children: React.ReactNode }) {
@@ -211,6 +212,24 @@ export function LaunchRunSheet({ children }: { children: React.ReactNode }) {
                     }
                   />
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-sm border border-border/70 px-4 py-3">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Skip uploads for existing options</p>
+                  <p className="text-xs text-muted-foreground">
+                    Prevent duplicate file uploads when the tender option already exists.
+                  </p>
+                </div>
+                <Switch
+                  checked={formState.skipFileUploadsForExistingTenderOptions}
+                  onCheckedChange={(checked) =>
+                    setFormState((current) => ({
+                      ...current,
+                      skipFileUploadsForExistingTenderOptions: checked,
+                    }))
+                  }
+                />
               </div>
             </FieldGroup>
           </FieldSet>

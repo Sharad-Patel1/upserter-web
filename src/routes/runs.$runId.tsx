@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 import { startTransition, useEffect, useState } from "react"
 import { toast } from "sonner"
 
+import { SessionToolbar } from "@/components/auth/session-toolbar"
 import type { RunItemDetail, RunSnapshot, RunStreamEvent } from "@/lib/run-types"
 import type { ItemFilters } from "@/lib/filters"
 import { Button } from "@/components/ui/button"
@@ -14,31 +15,40 @@ import { RunHeader } from "@/components/run/run-header"
 import { ItemsBrowser } from "@/components/run/items-browser"
 import { ItemDetailPanel } from "@/components/run/item-detail-panel"
 import { ActivityFeed } from "@/components/run/activity-feed"
-import {
-  getRunItemDetail,
-  getRunSnapshot,
-  getRunStreamBaseUrl,
-} from "@/lib/run.functions"
+import { getRunItemDetail, getRunSnapshot } from "@/lib/run.functions"
 import { createRunConsoleState, reduceRunConsoleEvent } from "@/lib/run-reducer"
 import { DEFAULT_FILTERS } from "@/lib/filters"
+import { getSession } from "@/lib/auth.functions"
 
 type ItemDetailState = { loading: boolean; data?: RunItemDetail; error?: string }
 type MainView = "items" | "activity"
 
 export const Route = createFileRoute("/runs/$runId")({
+  beforeLoad: async ({ location }) => {
+    const session = await getSession()
+
+    if (!session) {
+      throw redirect({
+        to: "/login",
+        search: {
+          redirect: location.href,
+        },
+      })
+    }
+
+    return { session }
+  },
   loader: async ({ params }) => {
-    const [snapshot, streamBaseUrl] = await Promise.all([
-      getRunSnapshot({ data: { runId: params.runId } }),
-      getRunStreamBaseUrl(),
-    ])
-    return { snapshot, streamBaseUrl }
+    const snapshot = await getRunSnapshot({ data: { runId: params.runId } })
+    return { snapshot }
   },
   component: RunDetailPage,
 })
 
 function RunDetailPage() {
-  const { snapshot: initialSnapshot, streamBaseUrl } = Route.useLoaderData()
+  const { snapshot: initialSnapshot } = Route.useLoaderData()
   const { runId } = Route.useParams()
+  const { session } = Route.useRouteContext()
   const [state, setState] = useState(() => createRunConsoleState(initialSnapshot))
   const [mainView, setMainView] = useState<MainView>("items")
   const [selectedKey, setSelectedKey] = useState(
@@ -56,7 +66,6 @@ function RunDetailPage() {
     let closed = false
     let terminal = isTerminalStatus(initialSnapshot.report.status)
     let reconnectTimer: number | undefined
-    const resolvedBaseUrl = resolveStreamBaseUrl(streamBaseUrl)
 
     const applyStreamEvent = (event: RunStreamEvent) => {
       startTransition(() => {
@@ -67,21 +76,13 @@ function RunDetailPage() {
     const connect = () => {
       if (closed) return
 
-      if (!resolvedBaseUrl) {
-        setStreamError("Live stream base URL is unavailable. Falling back to polling.")
-        setState((current) => ({ ...current, connectionState: "reconnecting" }))
-        return
-      }
-
       setState((current) => ({
         ...current,
         connectionState: current.connectionState === "closed" ? "closed" : "connecting",
       }))
       setStreamError(undefined)
 
-      const source = new EventSource(
-        `${resolvedBaseUrl}/observability/runs/${encodeURIComponent(runId)}/stream`
-      )
+      const source = new EventSource(`/api/runs/${encodeURIComponent(runId)}/stream`)
 
       source.addEventListener("open", () => {
         if (closed) { source.close(); return }
@@ -154,7 +155,7 @@ function RunDetailPage() {
       closed = true
       if (reconnectTimer) window.clearTimeout(reconnectTimer)
     }
-  }, [initialSnapshot.report.status, runId, streamBaseUrl])
+  }, [initialSnapshot.report.status, runId])
 
   // ── Polling fallback ───────────────────────────────────────────────
   useEffect(() => {
@@ -230,6 +231,10 @@ function RunDetailPage() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border/50 px-4 py-2 md:px-5">
+        <SessionToolbar email={session.user.email} />
+      </div>
+
       {/* ── Compact header ──────────────────────────────────────── */}
       <div className="shrink-0 border-b border-border/50 px-4 py-2.5 md:px-5">
         <RunHeader
@@ -301,18 +306,6 @@ function RunDetailPage() {
       </div>
     </div>
   )
-}
-
-function resolveStreamBaseUrl(serverValue: string | null) {
-  if (serverValue) {
-    return serverValue.endsWith("/") ? serverValue.slice(0, -1) : serverValue
-  }
-
-  if (typeof window === "undefined") return null
-
-  const { origin, hostname, protocol, port } = window.location
-  if (port === "3001") return `${protocol}//${hostname}:3000`
-  return origin
 }
 
 function isTerminalStatus(status: string) {

@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 import { startTransition, useEffect, useMemo, useState } from "react"
 
+import { SessionToolbar } from "@/components/auth/session-toolbar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,15 +9,31 @@ import { LaunchRunSheet } from "@/components/dashboard/launch-run-sheet"
 import { ActiveRunCard } from "@/components/dashboard/active-run-card"
 import { RecentRunsTable } from "@/components/dashboard/recent-runs-table"
 import { SummaryMetric } from "@/components/run/run-metrics"
+import { getSession } from "@/lib/auth.functions"
 import { listRuns } from "@/lib/run.functions"
 
 export const Route = createFileRoute("/")({
+  beforeLoad: async ({ location }) => {
+    const session = await getSession()
+
+    if (!session) {
+      throw redirect({
+        to: "/login",
+        search: {
+          redirect: location.href,
+        },
+      })
+    }
+
+    return { session }
+  },
   loader: () => listRuns({ data: { limit: 20 } }),
   component: DashboardPage,
 })
 
 function DashboardPage() {
   const initialRuns = Route.useLoaderData()
+  const { session } = Route.useRouteContext()
   const [runs, setRuns] = useState(initialRuns)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
@@ -44,6 +61,8 @@ function DashboardPage() {
 
   return (
     <div className="mx-auto flex max-w-[1480px] flex-col gap-6 px-4 py-6 md:px-6 md:py-8">
+      <SessionToolbar email={session.user.email} />
+
       <section className="grid gap-4 lg:grid-cols-[1.5fr_0.9fr]">
         <Card className="border border-foreground/10 bg-background/88 backdrop-blur-sm">
           <CardHeader className="gap-3 border-b border-border/70">

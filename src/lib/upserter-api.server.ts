@@ -1,4 +1,6 @@
-function getApiBaseUrl() {
+import { getRequestHeaders } from "@tanstack/react-start/server"
+
+export function getApiBaseUrl() {
   const apiBaseUrl = process.env.UPSERTER_API_BASE_URL
 
   if (!apiBaseUrl) {
@@ -28,18 +30,58 @@ async function parseResponseBody(response: Response) {
   }
 }
 
+function getForwardedHeaders(source?: HeadersInit) {
+  const incomingHeaders = source ? new Headers(source) : getRequestHeaders()
+  const headers = new Headers()
+
+  for (const name of [
+    "cookie",
+    "user-agent",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+  ]) {
+    const value = incomingHeaders.get(name)
+    if (value) {
+      headers.set(name, value)
+    }
+  }
+
+  return headers
+}
+
+export async function upserterApiFetch(
+  path: string,
+  init?: RequestInit & { forwardHeaders?: HeadersInit }
+) {
+  const headers = new Headers(init?.headers)
+  const forwardedHeaders = getForwardedHeaders(init?.forwardHeaders)
+
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json")
+  }
+
+  if (init?.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json")
+  }
+
+  forwardedHeaders.forEach((value, key) => {
+    if (!headers.has(key)) {
+      headers.set(key, value)
+    }
+  })
+
+  return fetch(`${getApiBaseUrl()}${path}`, {
+    ...init,
+    headers,
+  })
+}
+
 export async function upserterApiRequest<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit & { forwardHeaders?: HeadersInit }
 ): Promise<T> {
-  const response = await fetch(`${getApiBaseUrl()}${path}`, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  })
+  const response = await upserterApiFetch(path, init)
 
   const body = await parseResponseBody(response)
 
